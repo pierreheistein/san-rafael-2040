@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>San Rafael 2040 — La maqueta viva</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Young+Serif&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --void:#F1EFE9;       /* light "floating" background */
+    --void-2:#E7E3DA;
+    --bone:#2B2118;       /* now the dark ink text colour */
+    --muted:rgba(43,33,24,0.60);
+    --faint:rgba(43,33,24,0.32);
+    --hair:rgba(43,33,24,0.15);
+    --sun:#C27D2A;        /* ochre accent, reads on light */
+    --clay:#B5602F;
+    --river:#2F8378;
+    --serif:'Young Serif',Georgia,serif;
+    --sans:'Hanken Grotesk',system-ui,sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{ -webkit-text-size-adjust:100%; }
+  body{
+    font-family:var(--sans); background:var(--void); color:var(--bone);
+    overflow-x:hidden;
+  }
+  a{color:inherit}
+
+  /* ---- the live scene, fixed behind everything ---- */
+  #scene{position:fixed; inset:0; z-index:0; display:block; touch-action:none; cursor:grab;}
+  #scene.grabbing{cursor:grabbing;}
+  /* warm haze behind the model */
+  .haze{display:none;}
+  .vignette{position:fixed; inset:0; z-index:1; pointer-events:none;
+    background:radial-gradient(130% 100% at 55% 45%, transparent 62%, rgba(120,108,86,0.12));}
+  /* left readability scrim — soft light wash so dark text stays legible over the model */
+  .scrim{position:fixed; inset:0; z-index:2; pointer-events:none;
+    background:linear-gradient(95deg, rgba(241,239,233,0.94) 0%, rgba(241,239,233,0.72) 24%, rgba(241,239,233,0.12) 48%, transparent 62%);}
+  @media (max-width:760px){
+    .scrim{background:linear-gradient(0deg, rgba(241,239,233,0.96) 0%, rgba(241,239,233,0.7) 38%, transparent 76%);}
+  }
+
+  /* ---- persistent masthead ---- */
+  .mast{position:fixed; top:0; left:0; right:0; z-index:6; pointer-events:none;
+    display:flex; justify-content:space-between; align-items:center;
+    padding:26px clamp(20px,4vw,54px);
+    font-size:13px; font-weight:600; letter-spacing:.18em; text-transform:uppercase; color:var(--muted);}
+  .mast .right{color:var(--sun)}
+
+  /* ---- scroll spacer drives progress ---- */
+  .spacer{position:relative; z-index:1; height:760vh; pointer-events:none;}
+
+  /* ---- beats: fixed, full-viewport, opacity driven by JS ---- */
+  .beat{position:fixed; inset:0; z-index:4; display:flex; pointer-events:none;
+    padding:clamp(24px,5vw,90px); opacity:0;}
+  .beat .panel{max-width:min(560px,86vw);}
+  .beat.b-end .panel{max-width:min(660px,90vw);}
+  .beat.pos-bl{align-items:flex-end; justify-content:flex-start;}
+  .beat.pos-br{align-items:flex-end; justify-content:flex-end; text-align:right;}
+  .beat.pos-tl{align-items:flex-start; justify-content:flex-start;}
+  .beat.pos-c{align-items:center; justify-content:center; text-align:center;}
+
+  .kick{font-size:13px; font-weight:700; letter-spacing:.22em; text-transform:uppercase; color:var(--sun); margin-bottom:18px;}
+  h1.hero{font-family:var(--serif); font-weight:400; line-height:.96; letter-spacing:-0.02em;
+    font-size:clamp(52px,11vw,116px);}
+  h1.hero .yr{display:block; color:var(--sun);}
+  h2{font-family:var(--serif); font-weight:400; line-height:1.04; letter-spacing:-0.015em;
+    font-size:clamp(34px,6vw,68px); text-wrap:balance;}
+  .lead{font-size:clamp(18px,2.2vw,25px); line-height:1.55; color:var(--bone); margin-top:22px; text-wrap:pretty;}
+  .sub{font-size:clamp(15px,1.7vw,19px); line-height:1.6; color:var(--muted); margin-top:16px; max-width:48ch;}
+
+  /* hero extra */
+  .b-hero .panel{max-width:none}
+  .b-hero .tagline{font-family:var(--serif); font-style:normal; font-size:clamp(19px,2.4vw,28px);
+    line-height:1.35; color:var(--muted); margin-top:30px; max-width:20ch;}
+  .scrollcue{position:fixed; left:50%; bottom:30px; transform:translateX(-50%); z-index:6;
+    font-size:12px; letter-spacing:.2em; text-transform:uppercase; color:var(--faint);
+    display:flex; flex-direction:column; align-items:center; gap:10px; pointer-events:none;}
+  .scrollcue .dot{width:1px; height:42px; background:linear-gradient(var(--faint),transparent);}
+
+  /* three stages */
+  .stages{margin-top:30px; display:flex; flex-direction:column; gap:2px;}
+  .stage{display:grid; grid-template-columns:auto 1fr; gap:18px; align-items:baseline;
+    padding:16px 0; border-top:1px solid var(--hair);}
+  .stage:last-child{border-bottom:1px solid var(--hair);}
+  .stage .si{font-family:var(--serif); font-size:24px; color:var(--sun); line-height:1;}
+  .stage .st{font-size:20px; font-weight:600;}
+  .stage .sd{font-size:15.5px; color:var(--muted); line-height:1.5; margin-top:5px; grid-column:2;}
+
+  /* place-your-block prompt */
+  .placebtn{pointer-events:auto; display:inline-flex; align-items:center; gap:12px; margin-top:26px;
+    background:rgba(231,174,82,0.10); border:1px solid rgba(231,174,82,0.5); color:var(--sun);
+    font-family:var(--sans); font-size:16px; font-weight:600; letter-spacing:.02em;
+    padding:14px 22px; border-radius:2px; cursor:pointer; transition:background .4s cubic-bezier(.22,1,.36,1), color .4s;}
+  .placebtn:hover{background:var(--sun); color:var(--void-2);}
+  .placehint{font-size:14px; color:var(--muted); margin-top:14px;}
+  .placed-count{color:var(--sun); font-weight:600;}
+
+  /* invitation / logistics */
+  .b-end .panel{background:none;}
+  .ask{font-size:clamp(18px,2.1vw,23px); line-height:1.6; color:var(--bone); margin-top:20px;}
+  .ask b{color:var(--sun); font-weight:700;}
+  .meta{margin-top:34px; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:22px;
+    border-top:1px solid var(--hair); padding-top:26px;}
+  .meta .k{font-size:12px; font-weight:700; letter-spacing:.16em; text-transform:uppercase; color:var(--faint); margin-bottom:9px;}
+  .meta .v{font-size:18px; font-weight:600; line-height:1.35;}
+  .meta .v .ph{color:var(--sun);}
+  .meta .v .s{display:block; font-weight:400; color:var(--muted); font-size:15px; margin-top:3px;}
+  .endfoot{margin-top:30px; font-size:13px; letter-spacing:.14em; text-transform:uppercase; color:var(--faint);
+    display:flex; gap:20px; pointer-events:auto;}
+
+  /* drag hint chip */
+  .draghint{position:fixed; right:clamp(20px,4vw,54px); bottom:30px; z-index:6; pointer-events:none;
+    font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:var(--faint);
+    border:1px solid var(--hair); border-radius:999px; padding:9px 16px; background:rgba(22,15,11,.35);
+    backdrop-filter:blur(3px); transition:opacity .6s;}
+
+  @media (max-width:640px){
+    .meta{grid-template-columns:1fr 1fr; gap:18px;}
+    .beat.pos-br{text-align:left; justify-content:flex-start;}
+  }
+  /* ---- mobile typography & layout: smaller type, guaranteed wrapping, bottom panel ---- */
+  @media (max-width:820px){
+    .beat{padding:20px 22px 34px; flex-direction:column;}   /* column → panel stretches to width, text wraps */
+    .beat.pos-bl, .beat.pos-br, .beat.pos-c{align-items:stretch; justify-content:flex-end; text-align:left;}
+    .beat .panel{max-width:100% !important; width:100%; flex:0 1 auto;}
+    h1.hero{font-size:clamp(42px,12.5vw,56px);}
+    h2{font-size:clamp(24px,6.2vw,31px);}
+    h1.hero, h2, .lead, .sub, .ask, .tagline, .stage .sd, .stage .st{overflow-wrap:anywhere;}
+    .lead{font-size:16.5px; margin-top:16px;}
+    .sub{font-size:14.5px; max-width:none;}
+    .ask{font-size:16.5px;}
+    .b-hero .tagline{font-size:18px; margin-top:22px; max-width:none;}
+    .stages{margin-top:22px;}
+    .stages .st{font-size:17px;} .stages .sd{font-size:14px;}
+    .meta{gap:16px;} .meta .v{font-size:16px;} .meta .v .s{font-size:13px;}
+    .mast{padding:18px 22px;}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .scrollcue{display:none}
+  }
+</style>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+  <div class="haze"></div>
+  <div class="vignette"></div>
+  <div class="scrim"></div>
+
+  <div class="mast">
+    <span>ATLA Labs</span>
+    <span class="right">Por invitación</span>
+  </div>
+
+  <!-- BEAT 0 — HERO -->
+  <section class="beat b-hero pos-bl" data-from="0" data-to="0.10" data-fade="0.04">
+    <div class="panel">
+      <h1 class="hero">San Rafael<span class="yr">2040</span></h1>
+      <p class="tagline">La historia de una ciudad que se anima a imaginarse.</p>
+    </div>
+  </section>
+
+  <!-- BEAT 1 — OASIS / STAKES -->
+  <section class="beat pos-bl" data-from="0.12" data-to="0.27" data-fade="0.045">
+    <div class="panel">
+      <div class="kick">Una ciudad en el desierto</div>
+      <h2>Vivimos del agua de dos ríos.</h2>
+      <p class="lead">San Rafael es un oasis. Rodeada de tierra seca, a cientos de kilómetros de la ciudad parecida más cercana. Lo que decidamos ser deja una marca nítida.</p>
+      <p class="sub">Lo que esta ciudad va a ser dentro de veinte años todavía no está escrito.</p>
+    </div>
+  </section>
+
+  <!-- BEAT 2 — THE RETURN -->
+  <section class="beat pos-bl" data-from="0.31" data-to="0.47" data-fade="0.045">
+    <div class="panel">
+      <div class="kick">El regreso</div>
+      <h2>Una idea que dio la vuelta al mundo, y volvió a casa.</h2>
+      <p class="lead">Nació acá. La probamos en Gales, Inglaterra, Ámsterdam y Washington. En cada lugar, gente común imaginó el futuro de su comunidad y lo volvió algo concreto.</p>
+      <p class="sub">Ahora vuelve a hacer lo que siempre quiso: imaginar San Rafael desde San Rafael.</p>
+    </div>
+  </section>
+
+  <!-- BEAT 3 — THE DAY -->
+  <section class="beat pos-bl" data-from="0.51" data-to="0.73" data-fade="0.05">
+    <div class="panel">
+      <div class="kick">El taller · un día</div>
+      <h2>Cómo se vive el día.</h2>
+      <div class="stages">
+        <div class="stage"><span class="si">1</span><span class="st">Imaginar y descubrir</span><span class="sd">Soñás en grande, sin el freno del cómo ni del presupuesto.</span></div>
+        <div class="stage"><span class="si">2</span><span class="st">Acompañar y reflexionar</span><span class="sd">Facilitadores y mentores te ayudan a ver los puntos ciegos.</span></div>
+        <div class="stage"><span class="si">3</span><span class="st">Prototipar y compartir</span><span class="sd">La idea se vuelve un objeto traído de esa San Rafael de 2040.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- BEAT 4 — INVITATION -->
+  <section class="beat b-end pos-bl" data-from="0.80" data-to="1.01" data-fade="0.05">
+    <div class="panel">
+      <div class="kick">La invitación</div>
+      <h2>Sos parte de un grupo chico que elegí a mano.</h2>
+      <p class="ask">Te pido una sola cosa, y es la difícil: <b>el día entero</b>. Sé que es un montón. Pero esto no funciona en pedazos, te necesito de principio a fin.</p>
+      <div class="meta">
+        <div><div class="k">Dónde</div><div class="v">Espacio La Destilería<span class="s ph">[DIRECCIÓN]</span></div></div>
+        <div><div class="k">Cuándo</div><div class="v ph">[FECHA]<span class="s ph">[HORA]</span></div></div>
+        <div><div class="k">Confirmás</div><div class="v">Pierre<span class="s ph">[WHATSAPP]</span></div></div>
+      </div>
+      <div class="endfoot"><span>Un taller de ATLA Labs</span><span>@pierre_heistein</span></div>
+    </div>
+  </section>
+
+  <div class="scrollcue" id="scrollcue"><span>Deslizá para imaginar</span><span class="dot"></span></div>
+  <div class="draghint" id="draghint">Arrastrá para girar la ciudad</div>
+
+  <div class="spacer"></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ---------- deterministic RNG (stable city every load) ----------
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return ((t^t>>>14)>>>0)/4294967296;}}
+const rnd = mulberry32(20402026);
+const rr=(a,b)=>a+(b-a)*rnd();
+
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const params = new URLSearchParams(location.search);
+const FORCED = params.has('p') ? Math.max(0,Math.min(1,parseFloat(params.get('p')))) : null;
+const STILL = params.has('still');
+const CAM = params.has('cam') ? parseFloat(params.get('cam')) : null;   // QA: orbit angle override (0..1)
+const CAPFRAME = params.has('capframe') ? Math.max(8,parseInt(params.get('capframe'),10)) : 40;   // QA: which frame the screenshot freezes on (default 40; use ~400 to catch the train dwelling at the station)
+const isMobile = matchMedia('(max-width:820px)').matches || matchMedia('(pointer:coarse)').matches;
+if(params.has('bare')){   // QA: hide all UI so the model can be inspected unobstructed
+  addEventListener('DOMContentLoaded',()=>{});
+  document.querySelectorAll('.mast,.beat,.scrim,.vignette,.scrollcue,.draghint').forEach(e=>e.style.display='none');
+}
+
+// ---------- palette ----------
+const COL = {
+  void:0xF1EFE9, fog:0xF1EFE9,
+  sand:0xDAC79A, sandDark:0xC7B07F,
+  plinth:0x6E4A2E, plinthTop:0x7d5736,
+  clayA:0xC2693A, clayB:0xB57A45, boneTower:0xD9BE92, clayDark:0x8A4E2C,
+  sun:0xD98C36, river:0x7FB3A2, riverDeep:0x3f6b5e,
+  spark:0xD98C36
+};
+
+// ---------- renderer / scene / camera ----------
+const canvas = document.getElementById('scene');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true, preserveDrawingBuffer:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(COL.void);
+scene.fog = new THREE.FogExp2(COL.fog, 0.010);   // light, airy depth — the block floats
+
+const camera = new THREE.PerspectiveCamera(isMobile?54:40, innerWidth/innerHeight, 0.1, 200);
+camera.position.set(15.5, 9.5, 18.4);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.3, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.enablePan = false;
+controls.minDistance = 9;
+controls.maxDistance = 30;
+controls.minPolarAngle = 0.18;
+controls.maxPolarAngle = Math.PI*0.46;
+controls.autoRotate = !reduceMotion && !STILL;
+controls.autoRotateSpeed = 0.45;
+controls.enableZoom = false;   // let the mouse wheel scroll the page (which drives the story) instead of dollying
+if(FORCED!=null){ controls.enabled = false; }   // screenshot mode owns the camera
+
+// ---------- lighting ----------
+const sunLight = new THREE.DirectionalLight(0xFFF4E2, 2.2);
+sunLight.position.set(-10, 16, 9);
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.set(2048,2048);
+const sc = sunLight.shadow.camera;
+sc.left=-16; sc.right=16; sc.top=16; sc.bottom=-16; sc.near=1; sc.far=60;
+sunLight.shadow.bias = -0.0004;
+sunLight.shadow.radius = 9;
+scene.add(sunLight);
+
+const fill = new THREE.DirectionalLight(0xFFFFFF, 0.55);
+fill.position.set(14, 7, 16);
+scene.add(fill);
+scene.add(new THREE.HemisphereLight(0xFFF6E8, 0xCFC6B4, 1.15));   // soft daylight sky/ground
+
+// ---------- mobile: scroll drives everything; no finger-fight, lighter render ----------
+if(isMobile){
+  controls.enabled = false;          // no free-orbit on touch
+  controls.autoRotate = false;
+  canvas.style.touchAction = 'auto'; // let a swipe scroll the page (which advances the story)
+  canvas.style.pointerEvents = 'none';
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+  sunLight.shadow.mapSize.set(1024,1024);
+  const dh=document.getElementById('draghint'); if(dh) dh.style.display='none';
+}
+
+// ---------- the model group ----------
+const model = new THREE.Group();
+scene.add(model);
+
+const HALF = 11;             // half-width of the square diorama block (22 x 22)
+const DISC_R = HALF;         // kept for legacy bounds checks
+
+// river course (one valley river + one stream from the foothills)
+const RIVER_PATHS = [
+  [[-11,3.6],[-6,2.3],[-1,1.7],[4,2.3],[8,3.6],[11.2,4.4]]
+];
+function polyDist(x,z,path){
+  let best=1e9;
+  for(let i=0;i<path.length-1;i++){
+    const ax=path[i][0],az=path[i][1],bx=path[i+1][0],bz=path[i+1][1];
+    const dx=bx-ax,dz=bz-az; const t=Math.max(0,Math.min(1,((x-ax)*dx+(z-az)*dz)/((dx*dx+dz*dz)||1)));
+    const px=ax+dx*t,pz=az+dz*t; const d=Math.hypot(x-px,z-pz); if(d<best)best=d;
+  }
+  return best;
+}
+function riverDist(x,z){ let b=1e9; for(const p of RIVER_PATHS){const d=polyDist(x,z,p); if(d<b)b=d;} return b; }
+
+// ---------- terrain height field: desert dunes + a mountain ridge along the back ----------
+function mountainH(x,z){
+  const m = Math.max(0, (-z - 1.5) / (HALF - 1.5));       // 0 toward the front, 1 at the back edge
+  if(m<=0) return 0;
+  const ridge = (Math.sin(x*0.55+1.2)*0.5+0.5)*0.8
+              + (Math.sin(x*1.15-0.6)*0.5+0.5)*0.45
+              + (Math.sin(x*0.30+2.5)*0.5+0.5)*0.5;
+  return Math.pow(m,1.5) * (2.0 + ridge*3.6);
+}
+function terrainHeight(x,z){
+  const dunes = Math.sin(x*0.42)*Math.cos(z*0.38)*0.40 + Math.sin(x*0.9 - z*0.5)*0.15;
+  const natural = 0.85 + dunes + mountainH(x,z);   // raised baseline: nothing dips below the block top
+  const rd = riverDist(x,z);
+  const CHANNEL = 0.18;                             // flat river-channel floor
+  const core = 0.95, ramp = 2.4;                    // flat-bottomed core, then banks rise
+  const w = rd < core ? 0 : smoothstep(core, ramp, rd);
+  return CHANNEL*(1-w) + natural*w;                 // water sits in a flat trench; banks rise right at its edge
+}
+
+// ---------- the diorama base (earthy cross-section strata) ----------
+function strata(y,height,color,inset){
+  const wsz=HALF*2-(inset||0);
+  const m=new THREE.Mesh(new THREE.BoxGeometry(wsz, height, wsz),
+    new THREE.MeshStandardMaterial({color, roughness:1}));
+  m.position.y=y; m.receiveShadow=true; model.add(m); return m;
+}
+// exact-tiling bands (no overlap → no z-fight), slightly stepped inward for a clean cross-section
+strata(-0.55, 1.10, 0xD9C49A, 0.0);    // [-1.10, 0]  sandy topsoil
+strata(-1.75, 1.30, 0xC2A878, 0.5);    // [-2.40, -1.10] pale soil
+strata(-3.30, 1.80, 0xA98F68, 1.1);    // [-4.20, -2.40] light bedrock
+
+// ---------- terrain surface (square plane, dunes + mountains, vertex-coloured) ----------
+const terrainGeo = new THREE.PlaneGeometry(HALF*2, HALF*2, 132, 132);
+terrainGeo.rotateX(-Math.PI/2);
+const tp = terrainGeo.attributes.position;
+const tcol = [];
+const cSand=new THREE.Color(0xE0CD9C), cSandDk=new THREE.Color(0xCDB683),
+      cRock=new THREE.Color(0xA89A80), cRockHi=new THREE.Color(0xC3B697);
+for(let i=0;i<tp.count;i++){
+  const x=tp.getX(i), z=tp.getZ(i);
+  const h=terrainHeight(x,z); tp.setY(i,h);
+  const mt=mountainH(x,z);
+  let c;
+  if(mt>0.4){
+    c=cRock.clone().lerp(cRockHi, Math.min(1,(h-1.2)/5));
+    c.lerp(new THREE.Color(0xF5F4F0), smoothstep(4.0,6.0,h));   // snow caps on the high peaks
+  }
+  else { c=cSand.clone().lerp(cSandDk, (Math.sin(x*0.42)*Math.cos(z*0.38))*0.5+0.5); }
+  tcol.push(c.r,c.g,c.b);
+}
+terrainGeo.setAttribute('color', new THREE.Float32BufferAttribute(tcol,3));
+terrainGeo.computeVertexNormals();
+const terrain = new THREE.Mesh(terrainGeo,
+  new THREE.MeshStandardMaterial({vertexColors:true, roughness:1.0}));
+terrain.receiveShadow = true; model.add(terrain);
+
+// ---------- rivers (ribbons that follow the carved valley) ----------
+const riverMats = [];
+function makeRiver(path, width, surfaceY){
+  const curve = new THREE.CatmullRomCurve3(path.map(p=>new THREE.Vector3(p[0],0,p[1])));
+  const N=150, pos=[], nor=[], idx=[]; const samples=curve.getPoints(N);
+  for(let i=0;i<=N;i++){
+    const t=i/N, p=samples[i], tan=curve.getTangent(t);
+    const nx=-tan.z, nz=tan.x, half=width*0.5;
+    const ax=p.x+nx*half, az=p.z+nz*half, bx=p.x-nx*half, bz=p.z-nz*half;
+    const y=surfaceY;                        // constant surface above the flat channel → continuous water
+    pos.push(ax,y,az, bx,y,bz);
+    nor.push(0,1,0, 0,1,0);                 // force the surface to face up (so it's lit, not black)
+  }
+  for(let i=0;i<N;i++){const a=i*2; idx.push(a,a+1,a+2, a+1,a+3,a+2);}
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor,3));
+  g.setIndex(idx);
+  const m=new THREE.MeshStandardMaterial({color:0x49B0C2, roughness:0.18, metalness:0.0,
+    emissive:new THREE.Color(0x2E7E8C), emissiveIntensity:0.18, side:THREE.DoubleSide});
+  riverMats.push(m);
+  const mesh=new THREE.Mesh(g,m); model.add(mesh);
+}
+makeRiver(RIVER_PATHS[0], 1.7, 0.30);   // single river through the valley (vertical branch removed)
+
+// ---------- trees: foothill conifers + valley algarrobos (grow in with progress) ----------
+const trees=[];
+const matTrunk=new THREE.MeshStandardMaterial({color:0x7A5536, roughness:1});
+const matPine =new THREE.MeshStandardMaterial({color:0x6E9A4E, roughness:1});
+const matAlgo =new THREE.MeshStandardMaterial({color:0x8FAE57, roughness:1});
+function makeTree(x,z,kind,scale,startP,existing){
+  const g=new THREE.Group();
+  const trunkH = kind==='pine'?0.5:0.42;
+  const tr=new THREE.Mesh(new THREE.CylinderGeometry(0.055,0.10,trunkH,6), matTrunk);
+  tr.position.y=trunkH/2; tr.castShadow=true; g.add(tr);
+  if(kind==='pine'){
+    const c1=new THREE.Mesh(new THREE.ConeGeometry(0.46,1.25,8), matPine);
+    c1.position.y=trunkH+0.5; c1.castShadow=true; g.add(c1);
+    const c2=new THREE.Mesh(new THREE.ConeGeometry(0.32,0.85,8), matPine);
+    c2.position.y=trunkH+1.0; c2.castShadow=true; g.add(c2);
+  } else {
+    // algarrobo: broad, low, umbrella canopy (rounder geometry; no hard cast shadow → no hex blobs on the sand)
+    const can=new THREE.Mesh(new THREE.IcosahedronGeometry(0.62,1), matAlgo);
+    can.scale.set(1.4,0.48,1.4); can.position.y=trunkH+0.32; can.castShadow=false; g.add(can);
+    const can2=new THREE.Mesh(new THREE.IcosahedronGeometry(0.44,1), matAlgo);
+    can2.scale.set(1.25,0.55,1.25); can2.position.set(rr(-0.18,0.18), trunkH+0.58, rr(-0.18,0.18)); can2.castShadow=false; g.add(can2);
+  }
+  g.position.set(x, terrainHeight(x,z)-0.03, z);
+  g.scale.setScalar(0.0001);
+  model.add(g);
+  trees.push({g, s:scale, startP, existing});
+}
+// algarrobos on the foothills
+for(let k=0;k<90;k++){
+  const x=rr(-HALF+1, HALF-1), z=rr(-HALF+1, -0.5);
+  const mt=mountainH(x,z); if(mt<0.6||mt>3.0) continue;   // keep off the steepest slopes
+  if(riverDist(x,z)<0.7) continue;
+  makeTree(x,z,'algo', rr(0.8,1.4), rr(0.18,0.7), rnd()<0.28);
+}
+// algarrobos through the valley, greening outward from the rivers
+for(let k=0;k<120;k++){
+  const x=rr(-HALF+1, HALF-1), z=rr(-1.5, HALF-1);
+  if(mountainH(x,z)>0.7) continue;
+  const rd=riverDist(x,z);
+  if(rd>5.5 && rnd()<0.7) continue;                  // favour the riparian corridor
+  const start=0.16 + Math.min(0.55, rd*0.075);       // near-river greens first
+  makeTree(x,z,'algo', rr(0.7,1.3), start, rnd()<0.16 && rd<2.6);
+}
+
+// (flat grass-patch decals removed — they z-fought with the terrain and caused flicker;
+//  greening is carried by the trees and the cultivated fields instead)
+const patches=[];
+
+// ---------- low constructions: wide, human-scale, adobe + green roofs ----------
+const buildings=[];
+const bMats=[0xC98A5A,0xD8C29B,0xB5704A,0xE6D9C0,0xCC9A6A].map(c=>new THREE.MeshStandardMaterial({color:c, roughness:0.9}));
+const greenRoof=new THREE.MeshStandardMaterial({color:0x5E7340, roughness:1});
+function addBuilding(x,z,w,d,h,existing){
+  const g=new THREE.Group();
+  const b=new THREE.Mesh(new THREE.BoxGeometry(w,1,d), bMats[Math.floor(rr(0,bMats.length))]);
+  b.position.y=0.5; b.castShadow=true; b.receiveShadow=true; g.add(b);
+  if(rnd()<0.5){ const r=new THREE.Mesh(new THREE.BoxGeometry(w*1.04,0.14,d*1.04), greenRoof); r.position.y=1.02; r.castShadow=true; g.add(r); }
+  else { const r=new THREE.Mesh(new THREE.BoxGeometry(w*0.66,0.20,d*0.66), bMats[1]); r.position.y=1.07; r.castShadow=true; g.add(r); }
+  g.position.set(x, terrainHeight(x,z)-0.03, z);
+  g.scale.y=0.0001; model.add(g);
+  buildings.push({grp:g, h, existing});
+}
+const placed=[];
+for(let k=0;k<80 && placed.length<16;k++){
+  const x=rr(-HALF+2, HALF-2), z=rr(-1.0, HALF-2);
+  if(mountainH(x,z)>0.45) continue;
+  const rd=riverDist(x,z); if(rd<1.4 || rd>6) continue;
+  if(placed.some(p=>(p[0]-x)**2+(p[1]-z)**2 < 3.0)) continue;
+  placed.push([x,z]);
+  const w=rr(1.0,2.1), d=rr(1.0,2.1), h=rr(0.5,1.3);   // LOW + wide, never a tower
+  addBuilding(x,z,w,d,h, rnd()<0.3);
+}
+
+// ---------- modern-progress layer: clean energy, work, connectivity ----------
+const progressItems=[];   // {grp, s, appear} — scale in with progress
+const turbines=[];        // spinning hubs (live)
+const signals=[];         // pulsing connectivity rings (live)
+function scaleIn(grp, appear, s){ grp.scale.setScalar(0.0001); progressItems.push({grp, s:s||1, appear}); model.add(grp); }
+
+const solarPanelMat=new THREE.MeshStandardMaterial({color:0x2A4373, roughness:0.32, metalness:0.1, emissive:new THREE.Color(0x16243f), emissiveIntensity:0.15});
+const solarFrameMat=new THREE.MeshStandardMaterial({color:0x55606C, roughness:0.6});
+function solarArray(x,z,appear){
+  const g=new THREE.Group();
+  g.rotation.y=-0.55;   // turn the array so the panel faces angle toward the default viewpoint
+  for(let r=0;r<2;r++) for(let c=0;c<3;c++){
+    const p=new THREE.Group();
+    const panel=new THREE.Mesh(new THREE.BoxGeometry(0.7,0.05,0.48), solarPanelMat);
+    panel.rotation.x=-0.62; panel.position.y=0.26; panel.castShadow=true; p.add(panel);
+    const post=new THREE.Mesh(new THREE.CylinderGeometry(0.025,0.025,0.26,4), solarFrameMat); post.position.y=0.13; p.add(post);
+    p.position.set(c*0.82, 0, r*0.66); g.add(p);
+  }
+  g.position.set(x, terrainHeight(x,z)-0.02, z); scaleIn(g, appear);
+}
+const turbMat=new THREE.MeshStandardMaterial({color:0xF1EEE6, roughness:0.7});
+function turbine(x,z,appear,h){
+  const g=new THREE.Group();
+  const tower=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.11,h,8), turbMat); tower.position.y=h/2; tower.castShadow=true; g.add(tower);
+  const hub=new THREE.Group(); hub.position.set(0,h,0.06);
+  for(let i=0;i<3;i++){ const ba=new THREE.Group();
+    const blade=new THREE.Mesh(new THREE.BoxGeometry(0.07,1.1,0.18), turbMat); blade.position.y=0.6; blade.castShadow=true;
+    ba.add(blade); ba.rotation.z=i*Math.PI*2/3; hub.add(ba);
+  }
+  g.add(hub); turbines.push(hub);
+  g.position.set(x, terrainHeight(x,z)-0.02, z); scaleIn(g, appear);
+}
+const mastMat=new THREE.MeshStandardMaterial({color:0xCDC4B4, roughness:0.7});
+function mast(x,z,appear){
+  const g=new THREE.Group();
+  const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.09,3.6,6), mastMat); pole.position.y=1.8; pole.castShadow=true; g.add(pole);
+  // small cross-arms near the top so it reads as a comms mast clearly above the canopy
+  for(const yy of [2.7,3.1]){ const arm=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.04,0.04), mastMat); arm.position.set(0,yy,0); arm.castShadow=true; g.add(arm); }
+  const ring=[];
+  for(let i=1;i<=3;i++){ const t=new THREE.Mesh(new THREE.TorusGeometry(0.2*i,0.022,6,24),
+      new THREE.MeshBasicMaterial({color:0x2F8378, transparent:true, opacity:0.75}));
+    t.position.y=3.65; t.rotation.x=Math.PI/2; g.add(t); ring.push(t);
+  }
+  signals.push(ring);
+  g.position.set(x, terrainHeight(x,z)-0.02, z); scaleIn(g, appear);
+}
+function field(x,z,appear){
+  const g=new THREE.Group();
+  for(let r=0;r<6;r++){ const row=new THREE.Mesh(new THREE.BoxGeometry(1.8,0.07,0.16),
+      new THREE.MeshStandardMaterial({color:r%2?0x86A84F:0x6E8B43, roughness:1}));
+    row.position.set(0,0.05,r*0.24-0.6); row.receiveShadow=true; g.add(row);
+  }
+  g.position.set(x, terrainHeight(x,z), z); scaleIn(g, appear);
+}
+
+// solar arrays carry the clean-energy economy (no wind — there's little here)
+solarArray(-5.0, 5.6, 0.48);
+solarArray(4.6, 6.2, 0.58);
+solarArray(-7.8, 4.6, 0.52);
+solarArray(7.2, 5.0, 0.62);
+solarArray(-2.4, 7.3, 0.55);
+field(0.2, 6.7, 0.42);
+field(-7.6, 6.4, 0.50);
+mast(2.6, 4.6, 0.66);   // connectivity aerial — the "online work" read
+
+// ---------- cactus farm: native cardón rows — growth that works WITH the desert ----------
+const cactusMat=new THREE.MeshStandardMaterial({color:0x5C8150, roughness:0.9});
+const fruitMat=new THREE.MeshStandardMaterial({color:0xC23A5B, roughness:0.45, emissive:new THREE.Color(0x42101e), emissiveIntensity:0.18}); // ripe prickly-pear "tuna" — also the train's cargo
+function cactus(){
+  const g=new THREE.Group();
+  const h=rr(0.9,1.5);
+  const trunk=new THREE.Mesh(new THREE.CapsuleGeometry(0.13,h,4,8), cactusMat); trunk.position.y=h/2+0.1; trunk.castShadow=true; g.add(trunk);
+  const nArms=Math.floor(rr(1,3));
+  for(let a=0;a<nArms;a++){ const side=a%2?1:-1;
+    const elbow=new THREE.Mesh(new THREE.CapsuleGeometry(0.08,0.22,4,6), cactusMat); elbow.rotation.z=side*1.0; elbow.position.set(side*0.16, h*rr(0.45,0.7)+0.1, 0); g.add(elbow);
+    const up=new THREE.Mesh(new THREE.CapsuleGeometry(0.08,rr(0.3,0.5),4,6), cactusMat); up.position.set(side*0.28, h*rr(0.55,0.82)+0.1, 0); up.castShadow=true; g.add(up);
+    // a ripe tuna at the arm tip
+    const af=new THREE.Mesh(new THREE.SphereGeometry(0.07,8,8), fruitMat); af.position.set(side*0.30, h*rr(0.6,0.85)+0.34, 0); af.castShadow=true; g.add(af);
+  }
+  // a crown of fruit on the trunk top — reads clearly as a farm in harvest
+  const nf=Math.floor(rr(3,6));
+  for(let f=0;f<nf;f++){ const a=rr(0,Math.PI*2);
+    const fr=new THREE.Mesh(new THREE.SphereGeometry(0.075,8,8), fruitMat);
+    fr.position.set(Math.cos(a)*0.13, h+0.06+rr(-0.06,0.06), Math.sin(a)*0.13); fr.castShadow=true; g.add(fr);
+  }
+  return g;
+}
+function cactusFarm(cx,cz,appear){
+  const farm=new THREE.Group();
+  for(let r=0;r<4;r++) for(let c=0;c<5;c++){
+    const cc=cactus(); cc.position.set(c*0.72-1.45 + rr(-0.08,0.08), 0, r*0.72-1.08 + rr(-0.08,0.08)); farm.add(cc);
+  }
+  farm.position.set(cx, terrainHeight(cx,cz)-0.02, cz); scaleIn(farm, appear);
+}
+cactusFarm(-3.6, 8.2, 0.34);
+
+// ---------- information hub: a prominent trade of information, in & out ----------
+const dataArcs=[];
+function infoHub(x,z,appear){
+  const g=new THREE.Group();
+  const b=new THREE.Mesh(new THREE.BoxGeometry(1.1,0.7,1.1), new THREE.MeshStandardMaterial({color:0xEDE3CC, roughness:0.85})); b.position.y=0.35; b.castShadow=true; b.receiveShadow=true; g.add(b);
+  const roof=new THREE.Mesh(new THREE.BoxGeometry(1.18,0.14,1.18), new THREE.MeshStandardMaterial({color:0x2F8378})); roof.position.y=0.72; roof.castShadow=true; g.add(roof);
+  const dish=new THREE.Mesh(new THREE.SphereGeometry(0.24,14,14,0,Math.PI*2,0,Math.PI/2.2), new THREE.MeshStandardMaterial({color:0xF2ECDC, side:THREE.DoubleSide, roughness:0.6}));
+  dish.rotation.x=-0.7; dish.position.set(0.3,1.0,0.18); g.add(dish);
+  g.position.set(x, terrainHeight(x,z)-0.02, z); scaleIn(g, appear);
+  const base=new THREE.Vector3(x, terrainHeight(x,z)+0.95, z);
+  const targets=[[x+13,8,z-9],[x-12,9,z+5],[x+3,10.5,z+12]];
+  targets.forEach((t,i)=>{
+    const end=new THREE.Vector3(t[0],t[1],t[2]);
+    const mid=base.clone().lerp(end,0.5); mid.y+=5.5;
+    const curve=new THREE.QuadraticBezierCurve3(base,mid,end);
+    const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(curve.getPoints(44)),
+      new THREE.LineBasicMaterial({color:0x2F8378, transparent:true, opacity:0.0}));
+    scene.add(line);
+    const dots=[];
+    for(let k=0;k<2;k++){ const d=new THREE.Mesh(new THREE.SphereGeometry(0.085,8,8), new THREE.MeshBasicMaterial({color:0x49B0C2}));
+      d.visible=false; scene.add(d); dots.push({mesh:d, off:(i*0.3+k*0.5)%1, dir:((i+k)%2?1:-1), speed:rr(0.0035,0.006)}); }
+    dataArcs.push({line,dots,curve});
+  });
+}
+infoHub(4.4, 5.4, 0.55);
+
+// ---------- railway: a little station the train pulls into, loads fruit, and leaves (ground trade) ----------
+const TRACK_Z = 9.2;                       // a straight line across the flat foreground, in front of the cactus farm
+let railTopY = -1e9;                        // lay a level grade above the dunes so the rails stay flat
+for(let x=-HALF; x<=HALF; x+=0.4){ railTopY = Math.max(railTopY, terrainHeight(x, TRACK_Z)); }
+railTopY += 0.04;
+const stationX = 0.0;                       // platform position; train dwells here
+
+const railGroup = new THREE.Group();
+railGroup.position.set(0, railTopY, TRACK_Z);   // anchor at the grade top so it scales in place
+// ballast embankment (sinks into the dunes, flat top carries the rails)
+const ballast=new THREE.Mesh(new THREE.BoxGeometry(HALF*2,1.5,1.4),
+  new THREE.MeshStandardMaterial({color:0xB1986F, roughness:1}));
+ballast.position.y=-0.75; ballast.receiveShadow=true; railGroup.add(ballast);
+// sleepers
+const sleeperMat=new THREE.MeshStandardMaterial({color:0x6B4E34, roughness:1});
+for(let x=-HALF+0.4; x<=HALF-0.4; x+=0.7){
+  const s=new THREE.Mesh(new THREE.BoxGeometry(0.46,0.06,1.1), sleeperMat);
+  s.position.set(x,0.03,0); s.receiveShadow=true; railGroup.add(s);
+}
+// rails
+const railMat=new THREE.MeshStandardMaterial({color:0x4B4640, roughness:0.5, metalness:0.4});
+for(const dz of [-0.42,0.42]){
+  const rail=new THREE.Mesh(new THREE.BoxGeometry(HALF*2,0.07,0.07), railMat);
+  rail.position.set(0,0.085,dz); rail.castShadow=true; railGroup.add(rail);
+}
+// station: platform + low adobe depot on the town side of the line
+const platform=new THREE.Mesh(new THREE.BoxGeometry(2.6,0.16,0.7),
+  new THREE.MeshStandardMaterial({color:0xD8C7A4, roughness:1}));
+platform.position.set(stationX,0.10,-0.95); platform.receiveShadow=true; platform.castShadow=true; railGroup.add(platform);
+const depot=new THREE.Group(); depot.position.set(stationX,0,-1.55);
+const dwall=new THREE.Mesh(new THREE.BoxGeometry(1.7,0.7,0.8), new THREE.MeshStandardMaterial({color:0xC98A5A, roughness:0.9}));
+dwall.position.y=0.35; dwall.castShadow=true; dwall.receiveShadow=true; depot.add(dwall);
+const droof=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.12,1.0), greenRoof); droof.position.y=0.74; droof.castShadow=true; depot.add(droof);
+railGroup.add(depot);
+scaleIn(railGroup, 0.50);   // the railway is part of the modern-trade layer
+
+// the train itself (moves independently along x; appears later in the scroll)
+const trainBodyMat=new THREE.MeshStandardMaterial({color:0x6E665A, roughness:0.55, metalness:0.1}); // warm charcoal, reads on pale sky
+const trainAccentMat=new THREE.MeshStandardMaterial({color:0xC8862E, roughness:0.5});
+const trainWoodMat=new THREE.MeshStandardMaterial({color:0x8A6B45, roughness:0.9});
+const wheelMat=new THREE.MeshStandardMaterial({color:0x2C2A26, roughness:0.6});
+function addWheels(parent, len){
+  for(const wx of [-len*0.3, len*0.3]) for(const wz of [-0.28,0.28]){
+    const w=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,0.07,12), wheelMat);
+    w.rotation.x=Math.PI/2; w.position.set(wx,0.12,wz); w.castShadow=true; parent.add(w);
+  }
+}
+const train=new THREE.Group();
+// locomotive (front of the train; it travels toward -x)
+const loco=new THREE.Group(); loco.position.x=-0.95;
+const lbody=new THREE.Mesh(new THREE.BoxGeometry(1.3,0.45,0.62), trainBodyMat); lbody.position.y=0.4; lbody.castShadow=true; loco.add(lbody);
+const cab=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.42,0.66), trainBodyMat); cab.position.set(0.34,0.78,0); cab.castShadow=true; loco.add(cab);
+const stripe=new THREE.Mesh(new THREE.BoxGeometry(1.32,0.1,0.64), trainAccentMat); stripe.position.y=0.34; loco.add(stripe);
+const chimney=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.09,0.22,8), trainBodyMat); chimney.position.set(-0.45,0.78,0); chimney.castShadow=true; loco.add(chimney);
+addWheels(loco,1.3); train.add(loco);
+// open cargo car (behind; carries the fruit away)
+const car=new THREE.Group(); car.position.x=0.75;
+const bed=new THREE.Mesh(new THREE.BoxGeometry(1.25,0.2,0.62), trainWoodMat); bed.position.y=0.32; bed.castShadow=true; car.add(bed);
+const wallMat=new THREE.MeshStandardMaterial({color:0x7A5C3A, roughness:0.9});
+for(const wz of [-0.29,0.29]){ const wl=new THREE.Mesh(new THREE.BoxGeometry(1.25,0.22,0.05), wallMat); wl.position.set(0,0.5,wz); wl.castShadow=true; car.add(wl); }
+for(const wx of [-0.6,0.6]){ const we=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.22,0.58), wallMat); we.position.set(wx,0.5,0); car.add(we); }
+addWheels(car,1.25); train.add(car);
+// the fruit load — hidden until it's loaded at the station, then carried out
+const trainFruit=new THREE.Group(); trainFruit.position.set(0.75,0.5,0);
+for(let i=0;i<11;i++){ const fr=new THREE.Mesh(new THREE.SphereGeometry(0.08,8,8), fruitMat);
+  fr.position.set(rr(-0.5,0.5),0.05+rr(0,0.07),rr(-0.2,0.2)); fr.castShadow=true; trainFruit.add(fr); }
+trainFruit.visible=false; train.add(trainFruit);
+train.position.set(20, railTopY+0.10, TRACK_Z); train.visible=false; model.add(train);
+
+// ---------- a few soft clouds drifting above (desert sky) ----------
+const clouds=[];
+(function(){
+  const cc=document.createElement('canvas'); cc.width=cc.height=128;
+  const cx=cc.getContext('2d');
+  const g=cx.createRadialGradient(64,64,4,64,64,64);
+  g.addColorStop(0,'rgba(245,240,230,0.9)'); g.addColorStop(0.5,'rgba(240,232,218,0.45)'); g.addColorStop(1,'rgba(240,232,218,0)');
+  cx.fillStyle=g; cx.fillRect(0,0,128,128);
+  const tex=new THREE.CanvasTexture(cc);
+  const spots=[[-6,12,-9,7],[5,13,-4,9],[10,11,3,6]];
+  for(const s of spots){
+    const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex, transparent:true, depthWrite:false, opacity:0.55}));
+    sp.position.set(s[0],s[1],s[2]); sp.scale.set(s[3],s[3]*0.55,1); scene.add(sp); clouds.push(sp);
+  }
+})();
+
+// ---------- soft contact shadow so the diorama floats on the light ground ----------
+const shCanvas=document.createElement('canvas'); shCanvas.width=shCanvas.height=256;
+const shx=shCanvas.getContext('2d');
+const shg=shx.createRadialGradient(128,128,12,128,128,128);
+shg.addColorStop(0,'rgba(58,44,28,0.42)'); shg.addColorStop(0.55,'rgba(58,44,28,0.20)'); shg.addColorStop(1,'rgba(58,44,28,0)');
+shx.fillStyle=shg; shx.fillRect(0,0,256,256);
+const contact=new THREE.Mesh(new THREE.PlaneGeometry(42,42),
+  new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(shCanvas), transparent:true, depthWrite:false}));
+contact.rotation.x=-Math.PI/2; contact.position.y=-4.35; scene.add(contact);
+
+// ---------- the four world-cities (lights that converge home) ----------
+const cityGroup = new THREE.Group(); scene.add(cityGroup);
+const cityDefs=[
+  {n:'Gales', a:2.4}, {n:'Inglaterra', a:1.4}, {n:'Ámsterdam', a:0.3}, {n:'Washington', a:-0.7}
+];
+const cityNodes=[];
+cityDefs.forEach((c,i)=>{
+  const ang=c.a; const rad=15.5;
+  const pos=new THREE.Vector3(Math.cos(ang)*rad, 5.0+i*0.4, Math.sin(ang)*rad);
+  const dot=new THREE.Mesh(new THREE.SphereGeometry(0.22,16,16), new THREE.MeshBasicMaterial({color:COL.spark}));
+  dot.position.copy(pos); cityGroup.add(dot);
+  // arc to home (0,1.5,0)
+  const home=new THREE.Vector3(0,1.6,0);
+  const mid=pos.clone().lerp(home,0.5); mid.y+=4.5;
+  const arc=new THREE.QuadraticBezierCurve3(pos,mid,home);
+  const ag=new THREE.BufferGeometry().setFromPoints(arc.getPoints(50));
+  const aline=new THREE.Line(ag, new THREE.LineBasicMaterial({color:COL.spark, transparent:true, opacity:0.5}));
+  cityGroup.add(aline);
+  cityNodes.push({dot, aline, pos});
+});
+
+// home pulse marker
+const homePulse=new THREE.Mesh(new THREE.SphereGeometry(0.3,20,20), new THREE.MeshBasicMaterial({color:COL.sun}));
+homePulse.position.set(0,1.6,0); homePulse.visible=false; scene.add(homePulse);
+
+// ---------- grab cursor feedback ----------
+canvas.addEventListener('pointerdown',()=>canvas.classList.add('grabbing'));
+canvas.addEventListener('pointerup',()=>canvas.classList.remove('grabbing'));
+
+// ---------- scroll → progress ----------
+let progress=0, targetProgress=0;
+function computeProgress(){
+  if(FORCED!=null){ targetProgress=FORCED; return; }
+  const max=document.body.scrollHeight-innerHeight;
+  targetProgress = max>0 ? Math.min(1, scrollY/max) : 0;
+}
+addEventListener('scroll',computeProgress,{passive:true});
+computeProgress();
+if(FORCED!=null){ progress=FORCED; }
+
+// beats opacity
+const beats=[...document.querySelectorAll('.beat')].map(el=>({
+  el, from:parseFloat(el.dataset.from), to:parseFloat(el.dataset.to), fade:parseFloat(el.dataset.fade||'0.04')
+}));
+function smoothstep(e0,e1,x){const t=Math.max(0,Math.min(1,(x-e0)/(e1-e0)));return t*t*(3-2*t);}
+function updateBeats(p){
+  for(const b of beats){
+    let o=0;
+    if(p>=b.from-b.fade && p<=b.to+b.fade){
+      o=Math.min(smoothstep(b.from-b.fade,b.from+b.fade*0.3,p), 1-smoothstep(b.to-b.fade*0.3,b.to+b.fade,p));
+    }
+    b.el.style.opacity=o.toFixed(3);
+    // NOTE: never set pointer-events on the full-screen beat layer — it would
+    // intercept drags meant for the 3D canvas. The beat stays click-through
+    // (CSS pointer-events:none); only its buttons/links opt back in.
+  }
+}
+
+// ---------- per-frame state from progress ----------
+const tmpV=new THREE.Vector3();
+function applyState(p){
+  // PROGRESS = the oasis coming alive (greener and in balance, never taller)
+  // trees grow in, staggered, greening outward from the rivers
+  for(const t of trees){
+    let g = smoothstep(t.startP, t.startP+0.22, p);
+    if(t.existing) g = Math.max(g, smoothstep(0.0,0.10,p));
+    t.g.scale.setScalar(Math.max(0.0001, g*t.s));
+  }
+  // grass spreads along the water
+  for(const gp of patches){
+    const g = smoothstep(gp.start, gp.start+0.25, p);
+    gp.m.material.opacity = g*0.78;
+    gp.m.scale.setScalar(0.25 + g*0.9);
+  }
+  // low constructions nestle in, kept low — appear mid to late
+  const bGrow=smoothstep(0.44,0.82,p);
+  for(const b of buildings){
+    const g = b.existing? smoothstep(0.0,0.12,p) : bGrow;
+    b.grp.scale.y = Math.max(0.0001, g*b.h);
+  }
+  // modern-progress items scale in (solar, wind, fields, connectivity)
+  for(const it of progressItems){
+    const g=smoothstep(it.appear, it.appear+0.2, p);
+    it.grp.scale.setScalar(Math.max(0.0001, g*it.s));
+  }
+  // the river comes alive
+  const riverGlow=smoothstep(0.10,0.5,p);
+  for(const m of riverMats){ m.emissiveIntensity=0.12 + riverGlow*0.28; }
+  // world-cities visible & converging 0.30-0.48
+  const cityIn=smoothstep(0.30,0.40,p);
+  const conv=smoothstep(0.38,0.50,p);
+  cityGroup.visible = cityIn>0.001 && p<0.56;
+  homePulse.visible = conv>0.2 && p<0.56;
+  cityNodes.forEach((cn,i)=>{
+    cn.dot.scale.setScalar(0.4+cityIn*0.8);
+    cn.dot.material.opacity = cityIn;
+    // travel the dot toward home as conv rises
+    tmpV.copy(cn.pos).lerp(new THREE.Vector3(0,1.6,0), conv);
+    cn.dot.position.copy(tmpV);
+    cn.aline.material.opacity = cityIn*0.55*(1-conv*0.5);
+  });
+  // camera framing: gentle dolly-in + slight height change with progress
+  // The camera is "scripted" (driven by progress) for screenshots AND on mobile,
+  // where there's no free-orbit — scrolling turns the model.
+  if(FORCED!=null || isMobile){
+    let ang = 0.60 + p*0.30, dist = 24 - p*2.8, hy = 10.0 - p*1.8;   // desktop forced framing
+    if(isMobile){ ang = 0.55 + p*0.55; dist = 21 - p*3.0; hy = 11.5 - p*1.6; }  // portrait framing
+    if(CAM!=null){ ang = CAM*Math.PI*2; dist = 23; hy = 10.5; }       // QA sweep override
+    camera.position.set(Math.sin(ang)*dist, hy, Math.cos(ang)*dist);
+    controls.target.set(0, 1.2, 0);
+    camera.lookAt(0, 1.2, 0);          // re-aim: position alone doesn't orient the camera
+    camera.updateProjectionMatrix();
+  } else {
+    controls.minDistance = 9;          // desktop: OrbitControls owns rotation
+  }
+}
+
+// ---------- UI fade (cues) ----------
+const scrollcue=document.getElementById('scrollcue');
+const draghint=document.getElementById('draghint');
+
+// ---------- resize ----------
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+
+// ---------- pulse helper ----------
+let frame=0;
+function animate(){
+  frame++;
+  progress += (targetProgress-progress)*0.10;
+  if(Math.abs(targetProgress-progress)<0.0005) progress=targetProgress;
+  updateBeats(progress);
+  applyState(progress);
+  homePulse.scale.setScalar(0.8+Math.sin(frame*0.12)*0.25);
+  for(const h of turbines) h.rotation.z = frame*0.045;
+  for(const ring of signals){ ring.forEach((r,i)=>{ const ph=((frame*0.012 + i*0.34)%1); r.scale.setScalar(0.7+ph*1.0); r.material.opacity=0.65*(1-ph); }); }
+  // the train pulls in, loads fruit at the station, then heads back out — and loops (once "connected")
+  if(progress>0.5){
+    const PERIOD=900, T=frame%PERIOD;
+    const dwellX = stationX - 0.75;   // stops so the cargo car sits at the platform
+    const ENTER = HALF, EXIT = -HALF; // travel only between the rail ends — never floats past the block
+    if(T<240){                        // arriving from the right rail end
+      train.visible=true; const u=smoothstep(0,1,T/240);
+      train.position.x = ENTER + (dwellX-ENTER)*u; trainFruit.visible=false;
+    } else if(T<470){                 // stopped at the platform — fruit loads partway through
+      train.visible=true; train.position.x=dwellX; trainFruit.visible=(T-240)>110;
+    } else if(T<720){                 // departing toward the left rail end, carrying the harvest away
+      train.visible=true; const u=smoothstep(0,1,(T-470)/250);
+      train.position.x = dwellX + (EXIT-dwellX)*u; trainFruit.visible=true;
+    } else { train.visible=false; trainFruit.visible=false; }   // off-stage, then loop
+    if(Math.abs(train.position.x) > HALF+0.2) train.visible=false;  // safety: never show off the rails
+  } else { train.visible=false; trainFruit.visible=false; }
+  // information flowing in and out along the hub arcs
+  const infoOn = progress>0.55;
+  for(const arc of dataArcs){
+    arc.line.material.opacity = infoOn ? 0.22 : 0.0;
+    for(const dt of arc.dots){
+      dt.mesh.visible = infoOn;
+      if(infoOn){ dt.off=(dt.off + dt.speed*dt.dir + 1)%1; arc.curve.getPoint(dt.off, dt.mesh.position); }
+    }
+  }
+  if(scrollcue) scrollcue.style.opacity = (progress<0.04?1:0);
+  if(draghint) draghint.style.opacity = (progress>0.02 && progress<0.16?0.9:0);
+  if(FORCED==null && !isMobile) controls.update();   // mobile camera is scripted by scroll, not OrbitControls
+  renderer.render(scene,camera);
+  if(params.has('dbg') && frame===8){
+    const gl=renderer.getContext(); const px=new Uint8Array(4);
+    gl.readPixels(Math.floor(gl.drawingBufferWidth/2), Math.floor(gl.drawingBufferHeight/2),1,1,gl.RGBA,gl.UNSIGNED_BYTE,px);
+    console.log('DBG centerpixel='+px[0]+','+px[1]+','+px[2]+','+px[3]+' bufW='+gl.drawingBufferWidth+' bufH='+gl.drawingBufferHeight+' rsize='+renderer.getSize(new THREE.Vector2()).toArray());
+  }
+  // Screenshot plumbing only: headless Chrome won't composite the live WebGL
+  // layer, so rasterize it into an <img> (the buffer is preserved) and let the
+  // HTML overlays sit on top. Live site never hits this path.
+  if(FORCED!=null && params.has('shot') && frame===CAPFRAME && !window.__swapped){
+    window.__swapped=true;
+    const img=document.createElement('img');
+    img.style.cssText='position:fixed;inset:0;width:100vw;height:100vh;object-fit:cover;z-index:0';
+    img.src=canvas.toDataURL('image/png');
+    document.body.appendChild(img);
+    canvas.style.visibility='hidden';
+  }
+  const stopFrame = params.has('shot') ? Math.max(180, CAPFRAME+6) : 70;
+  if(FORCED!=null && frame>stopFrame){ return; }
+  requestAnimationFrame(animate);
+}
+animate();
+
+// signal for headless screenshot timing
+setTimeout(()=>{window.__ready=true;}, 1200);
+
+// ---- debug ----
+if(params.has('solo')){
+  document.querySelectorAll('.haze,.vignette,.beat,.mast,.spacer,.scrollcue,.draghint').forEach(e=>e.style.display='none');
+  canvas.style.position='absolute'; canvas.style.zIndex='5';
+}
+if(params.has('dbg')){
+  scene.background = new THREE.Color(0xff00ff);
+  const m=new THREE.Mesh(new THREE.SphereGeometry(2,24,24), new THREE.MeshBasicMaterial({color:0x00ff00}));
+  scene.add(m);
+  console.log('DBG scene.children='+scene.children.length+' model.children='+model.children.length+
+    ' buildings='+buildings.length+' camPos='+camera.position.toArray().map(n=>n.toFixed(1))+
+    ' target='+controls.target.toArray());
+}
+</script>
+</body>
+</html>
