@@ -443,16 +443,27 @@ function makeTree(x,z,kind,scale,startP,existing){
   trees.push({g, s:scale, startP, existing});
 }
 // algarrobos on the foothills
-for(let k=0;k<90;k++){
+for(let k=0;k<65;k++){
   const x=rr(-HALF+1, HALF-1), z=rr(-HALF+1, -0.5);
   const mt=mountainH(x,z); if(mt<0.6||mt>3.0) continue;   // keep off the steepest slopes
   if(riverDist(x,z)<0.7) continue;
   makeTree(x,z,'algo', rr(0.8,1.4), rr(0.18,0.7), rnd()<0.28);
 }
+// modern-layer placements declared here so the valley trees can avoid them (single source of truth)
+const SOLAR_POS  = [[-5.0,5.6,0.48],[4.6,6.2,0.58],[-7.8,4.6,0.52],[7.2,5.0,0.62],[-2.4,7.3,0.55]];
+const CACTUS_POS = [[-3.6,8.2,0.34]];
+// a site is blocked for trees if it sits in the river, on a solar array, or in the cactus farm
+function treeBlocked(x,z){
+  if(riverDist(x,z) < 1.0) return true;                                                            // in the river channel (ribbon ±0.85)
+  for(const s of SOLAR_POS){ if((x-(s[0]+0.87))**2 + (z-(s[1]-0.15))**2 < 1.6*1.6) return true; }  // on a solar array (offset = rotated centroid)
+  for(const c of CACTUS_POS){ if((x-c[0])**2 + (z-c[1])**2 < 2.0*2.0) return true; }                // in the cactus farm
+  return false;
+}
 // algarrobos through the valley, greening outward from the rivers
-for(let k=0;k<120;k++){
+for(let k=0;k<85;k++){
   const x=rr(-HALF+1, HALF-1), z=rr(-1.5, HALF-1);
   if(mountainH(x,z)>0.7) continue;
+  if(treeBlocked(x,z)) continue;
   const rd=riverDist(x,z);
   if(rd>5.5 && rnd()<0.7) continue;                  // favour the riparian corridor
   const start=0.16 + Math.min(0.55, rd*0.075);       // near-river greens first
@@ -498,11 +509,11 @@ const solarPanelMat=new THREE.MeshStandardMaterial({color:0x2A4373, roughness:0.
 const solarFrameMat=new THREE.MeshStandardMaterial({color:0x55606C, roughness:0.6});
 function solarArray(x,z,appear){
   const g=new THREE.Group();
-  g.rotation.y=-0.55;   // turn the array so the panel faces angle toward the default viewpoint
+  g.rotation.y=0.55;   // panels face out across the valley toward the viewer — away from the back mountains
   for(let r=0;r<2;r++) for(let c=0;c<3;c++){
     const p=new THREE.Group();
     const panel=new THREE.Mesh(new THREE.BoxGeometry(0.7,0.05,0.48), solarPanelMat);
-    panel.rotation.x=-0.62; panel.position.y=0.26; panel.castShadow=true; p.add(panel);
+    panel.rotation.x=0.62; panel.position.y=0.26; panel.castShadow=true; p.add(panel);
     const post=new THREE.Mesh(new THREE.CylinderGeometry(0.025,0.025,0.26,4), solarFrameMat); post.position.y=0.13; p.add(post);
     p.position.set(c*0.82, 0, r*0.66); g.add(p);
   }
@@ -544,11 +555,7 @@ function field(x,z,appear){
 }
 
 // solar arrays carry the clean-energy economy (no wind — there's little here)
-solarArray(-5.0, 5.6, 0.48);
-solarArray(4.6, 6.2, 0.58);
-solarArray(-7.8, 4.6, 0.52);
-solarArray(7.2, 5.0, 0.62);
-solarArray(-2.4, 7.3, 0.55);
+for(const s of SOLAR_POS) solarArray(s[0], s[1], s[2]);
 field(0.2, 6.7, 0.42);
 field(-7.6, 6.4, 0.50);
 mast(2.6, 4.6, 0.66);   // connectivity aerial — the "online work" read
@@ -582,7 +589,7 @@ function cactusFarm(cx,cz,appear){
   }
   farm.position.set(cx, terrainHeight(cx,cz)-0.02, cz); scaleIn(farm, appear);
 }
-cactusFarm(-3.6, 8.2, 0.34);
+for(const c of CACTUS_POS) cactusFarm(c[0], c[1], c[2]);
 
 // ---------- information hub: a prominent trade of information, in & out ----------
 const dataArcs=[];
@@ -610,74 +617,74 @@ function infoHub(x,z,appear){
 }
 infoHub(4.4, 5.4, 0.55);
 
-// ---------- railway: a little station the train pulls into, loads fruit, and leaves (ground trade) ----------
+// ---------- hyperloop: an elevated guideway the freight pod glides into, loads the harvest, and departs (modern trade) ----------
 const TRACK_Z = 9.2;                       // a straight line across the flat foreground, in front of the cactus farm
-let railTopY = -1e9;                        // lay a level grade above the dunes so the rails stay flat
+let railTopY = -1e9;                        // a level grade above the dunes so the guideway stays flat
 for(let x=-HALF; x<=HALF; x+=0.4){ railTopY = Math.max(railTopY, terrainHeight(x, TRACK_Z)); }
 railTopY += 0.04;
-const stationX = 0.0;                       // platform position; train dwells here
+const stationX = 0.0;                       // terminal position; the pod dwells here
+const TUBE_Y = 1.25;                        // height of the elevated guideway above the grade
 
 const railGroup = new THREE.Group();
 railGroup.position.set(0, railTopY, TRACK_Z);   // anchor at the grade top so it scales in place
-// ballast embankment (sinks into the dunes, flat top carries the rails)
-const ballast=new THREE.Mesh(new THREE.BoxGeometry(HALF*2,1.5,1.4),
-  new THREE.MeshStandardMaterial({color:0xB1986F, roughness:1}));
-ballast.position.y=-0.75; ballast.receiveShadow=true; railGroup.add(ballast);
-// sleepers
-const sleeperMat=new THREE.MeshStandardMaterial({color:0x6B4E34, roughness:1});
-for(let x=-HALF+0.4; x<=HALF-0.4; x+=0.7){
-  const s=new THREE.Mesh(new THREE.BoxGeometry(0.46,0.06,1.1), sleeperMat);
-  s.position.set(x,0.03,0); s.receiveShadow=true; railGroup.add(s);
+// slender pylons carrying the elevated guideway, each with a saddle cradle on top
+const pylonMat=new THREE.MeshStandardMaterial({color:0xCEC6B6, roughness:0.8});
+for(let x=-HALF+1.0; x<=HALF-1.0; x+=2.4){
+  const py=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.12,TUBE_Y,8), pylonMat);
+  py.position.set(x,TUBE_Y/2,0); py.castShadow=true; railGroup.add(py);
+  const saddle=new THREE.Mesh(new THREE.BoxGeometry(0.36,0.14,0.8), pylonMat);
+  saddle.position.set(x,TUBE_Y,0); saddle.castShadow=true; railGroup.add(saddle);
 }
-// rails
-const railMat=new THREE.MeshStandardMaterial({color:0x4B4640, roughness:0.5, metalness:0.4});
-for(const dz of [-0.42,0.42]){
-  const rail=new THREE.Mesh(new THREE.BoxGeometry(HALF*2,0.07,0.07), railMat);
-  rail.position.set(0,0.085,dz); rail.castShadow=true; railGroup.add(rail);
+// the translucent guideway tube — the pod is visible gliding inside it
+const tube=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,HALF*2,20,1,true),
+  new THREE.MeshStandardMaterial({color:0xBFE0E6, roughness:0.12, metalness:0.15, transparent:true, opacity:0.20, side:THREE.DoubleSide}));
+tube.rotation.z=Math.PI/2; tube.position.set(0,TUBE_Y,0); railGroup.add(tube);
+// structural rings hint the tube's form without hiding the pod — one rib per pylon
+const ringMat=new THREE.MeshStandardMaterial({color:0xADB7BB, roughness:0.5, metalness:0.35});
+for(let x=-HALF+1.0; x<=HALF-1.0; x+=2.4){
+  const rg=new THREE.Mesh(new THREE.TorusGeometry(0.51,0.03,8,22), ringMat);
+  rg.rotation.y=Math.PI/2; rg.position.set(x,TUBE_Y,0); railGroup.add(rg);
 }
-// station: platform + low adobe depot on the town side of the line
-const platform=new THREE.Mesh(new THREE.BoxGeometry(2.6,0.16,0.7),
-  new THREE.MeshStandardMaterial({color:0xD8C7A4, roughness:1}));
-platform.position.set(stationX,0.10,-0.95); platform.receiveShadow=true; platform.castShadow=true; railGroup.add(platform);
-const depot=new THREE.Group(); depot.position.set(stationX,0,-1.55);
-const dwall=new THREE.Mesh(new THREE.BoxGeometry(1.7,0.7,0.8), new THREE.MeshStandardMaterial({color:0xC98A5A, roughness:0.9}));
-dwall.position.y=0.35; dwall.castShadow=true; dwall.receiveShadow=true; depot.add(dwall);
-const droof=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.12,1.0), greenRoof); droof.position.y=0.74; droof.castShadow=true; depot.add(droof);
-railGroup.add(depot);
-scaleIn(railGroup, 0.50);   // the railway is part of the modern-trade layer
+// terminal: a sleek platform + low hall on the town side, with a boarding column up to the line
+const platform=new THREE.Mesh(new THREE.BoxGeometry(3.0,0.16,0.95),
+  new THREE.MeshStandardMaterial({color:0xDCE2E3, roughness:0.7}));
+platform.position.set(stationX,0.10,-1.05); platform.receiveShadow=true; platform.castShadow=true; railGroup.add(platform);
+const terminal=new THREE.Group(); terminal.position.set(stationX,0,-1.75);
+const thall=new THREE.Mesh(new THREE.BoxGeometry(2.3,0.82,1.0), new THREE.MeshStandardMaterial({color:0xEBE7DD, roughness:0.75}));
+thall.position.y=0.41; thall.castShadow=true; thall.receiveShadow=true; terminal.add(thall);
+const troof=new THREE.Mesh(new THREE.BoxGeometry(2.6,0.12,1.2), greenRoof); troof.position.y=0.88; troof.castShadow=true; terminal.add(troof);
+railGroup.add(terminal);
+const column=new THREE.Mesh(new THREE.BoxGeometry(0.5,TUBE_Y,0.5), pylonMat);
+column.position.set(stationX,TUBE_Y/2,-0.55); column.castShadow=true; railGroup.add(column);
+scaleIn(railGroup, 0.50);   // the guideway is part of the modern-trade layer
 
-// the train itself (moves independently along x; appears later in the scroll)
-const trainBodyMat=new THREE.MeshStandardMaterial({color:0x6E665A, roughness:0.55, metalness:0.1}); // warm charcoal, reads on pale sky
-const trainAccentMat=new THREE.MeshStandardMaterial({color:0xC8862E, roughness:0.5});
-const trainWoodMat=new THREE.MeshStandardMaterial({color:0x8A6B45, roughness:0.9});
-const wheelMat=new THREE.MeshStandardMaterial({color:0x2C2A26, roughness:0.6});
-function addWheels(parent, len){
-  for(const wx of [-len*0.3, len*0.3]) for(const wz of [-0.28,0.28]){
-    const w=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,0.07,12), wheelMat);
-    w.rotation.x=Math.PI/2; w.position.set(wx,0.12,wz); w.castShadow=true; parent.add(w);
-  }
-}
+// the hyperloop pod (moves independently along x; appears later in the scroll).
+// NB: the variable names `train` / `trainFruit` are kept so the scroll animation contract is unchanged.
+const podMat   =new THREE.MeshStandardMaterial({color:0xEAEEF0, roughness:0.28, metalness:0.40}); // brushed-metal shell, reads on pale sky
+const podAccent=new THREE.MeshStandardMaterial({color:0xC8862E, roughness:0.4});                  // ochre accent, carried over from the old livery
+const podGlass =new THREE.MeshStandardMaterial({color:0x26333D, roughness:0.12, metalness:0.30});
+const bayMat   =new THREE.MeshStandardMaterial({color:0xCBD2D4, roughness:0.5, metalness:0.25});
 const train=new THREE.Group();
-// locomotive (front of the train; it travels toward -x)
-const loco=new THREE.Group(); loco.position.x=-0.95;
-const lbody=new THREE.Mesh(new THREE.BoxGeometry(1.3,0.45,0.62), trainBodyMat); lbody.position.y=0.4; lbody.castShadow=true; loco.add(lbody);
-const cab=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.42,0.66), trainBodyMat); cab.position.set(0.34,0.78,0); cab.castShadow=true; loco.add(cab);
-const stripe=new THREE.Mesh(new THREE.BoxGeometry(1.32,0.1,0.64), trainAccentMat); stripe.position.y=0.34; loco.add(stripe);
-const chimney=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.09,0.22,8), trainBodyMat); chimney.position.set(-0.45,0.78,0); chimney.castShadow=true; loco.add(chimney);
-addWheels(loco,1.3); train.add(loco);
-// open cargo car (behind; carries the fruit away)
-const car=new THREE.Group(); car.position.x=0.75;
-const bed=new THREE.Mesh(new THREE.BoxGeometry(1.25,0.2,0.62), trainWoodMat); bed.position.y=0.32; bed.castShadow=true; car.add(bed);
-const wallMat=new THREE.MeshStandardMaterial({color:0x7A5C3A, roughness:0.9});
-for(const wz of [-0.29,0.29]){ const wl=new THREE.Mesh(new THREE.BoxGeometry(1.25,0.22,0.05), wallMat); wl.position.set(0,0.5,wz); wl.castShadow=true; car.add(wl); }
-for(const wx of [-0.6,0.6]){ const we=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.22,0.58), wallMat); we.position.set(wx,0.5,0); car.add(we); }
-addWheels(car,1.25); train.add(car);
-// the fruit load — hidden until it's loaded at the station, then carried out
-const trainFruit=new THREE.Group(); trainFruit.position.set(0.75,0.5,0);
-for(let i=0;i<11;i++){ const fr=new THREE.Mesh(new THREE.SphereGeometry(0.08,8,8), fruitMat);
-  fr.position.set(rr(-0.5,0.5),0.05+rr(0,0.07),rr(-0.2,0.2)); fr.castShadow=true; trainFruit.add(fr); }
+// sleek shell, nose toward -x (the travel direction)
+const shell=new THREE.Mesh(new THREE.CapsuleGeometry(0.30,1.5,8,16), podMat);
+shell.rotation.z=Math.PI/2; shell.position.x=-0.35; shell.castShadow=true; train.add(shell);
+// window band down each flank
+for(const wz of [-0.305,0.305]){ const win=new THREE.Mesh(new THREE.BoxGeometry(1.2,0.16,0.02), podGlass); win.position.set(-0.5,0.05,wz); train.add(win); }
+// nose accent ring
+const nring=new THREE.Mesh(new THREE.TorusGeometry(0.305,0.035,8,20), podAccent); nring.rotation.y=Math.PI/2; nring.position.x=-1.12; nring.castShadow=true; train.add(nring);
+// rear open freight bay — carries the cactus harvest out (the trade read, in modern form)
+const bay=new THREE.Group(); bay.position.set(0.82,-0.04,0);
+const bfloor=new THREE.Mesh(new THREE.BoxGeometry(0.98,0.08,0.6), bayMat); bfloor.position.y=-0.14; bfloor.castShadow=true; bay.add(bfloor);
+for(const wz of [-0.30,0.30]){ const wl=new THREE.Mesh(new THREE.BoxGeometry(0.98,0.24,0.05), bayMat); wl.position.set(0,0.0,wz); wl.castShadow=true; bay.add(wl); }
+const bback=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.24,0.6), bayMat); bback.position.set(0.52,0.0,0); bay.add(bback);
+const bfront=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.24,0.6), podMat); bfront.position.set(-0.52,0.0,0); bay.add(bfront);
+train.add(bay);
+// the fruit load — hidden until it's loaded at the terminal, then carried out
+const trainFruit=new THREE.Group(); trainFruit.position.set(0.82,-0.02,0);
+for(let i=0;i<9;i++){ const fr=new THREE.Mesh(new THREE.SphereGeometry(0.07,8,8), fruitMat);
+  fr.position.set(rr(-0.40,0.40),0.0+rr(0,0.06),rr(-0.18,0.18)); fr.castShadow=true; trainFruit.add(fr); }
 trainFruit.visible=false; train.add(trainFruit);
-train.position.set(20, railTopY+0.10, TRACK_Z); train.visible=false; model.add(train);
+train.position.set(20, railTopY+TUBE_Y, TRACK_Z); train.visible=false; model.add(train);
 
 // ---------- a few soft clouds drifting above (desert sky) ----------
 const clouds=[];
@@ -843,21 +850,21 @@ function animate(){
   homePulse.scale.setScalar(0.8+Math.sin(frame*0.12)*0.25);
   for(const h of turbines) h.rotation.z = frame*0.045;
   for(const ring of signals){ ring.forEach((r,i)=>{ const ph=((frame*0.012 + i*0.34)%1); r.scale.setScalar(0.7+ph*1.0); r.material.opacity=0.65*(1-ph); }); }
-  // the train pulls in, loads fruit at the station, then heads back out — and loops (once "connected")
+  // the pod glides in, loads the harvest at the terminal, then heads back out — and loops (once "connected")
   if(progress>0.5){
     const PERIOD=900, T=frame%PERIOD;
-    const dwellX = stationX - 0.75;   // stops so the cargo car sits at the platform
-    const ENTER = HALF, EXIT = -HALF; // travel only between the rail ends — never floats past the block
-    if(T<240){                        // arriving from the right rail end
+    const dwellX = stationX - 0.75;   // stops so the freight bay sits over the terminal
+    const ENTER = HALF, EXIT = -HALF; // travel only between the guideway ends — never floats past the block
+    if(T<240){                        // gliding in from the right end of the tube
       train.visible=true; const u=smoothstep(0,1,T/240);
       train.position.x = ENTER + (dwellX-ENTER)*u; trainFruit.visible=false;
-    } else if(T<470){                 // stopped at the platform — fruit loads partway through
+    } else if(T<470){                 // dwelling at the terminal — harvest loads partway through
       train.visible=true; train.position.x=dwellX; trainFruit.visible=(T-240)>110;
-    } else if(T<720){                 // departing toward the left rail end, carrying the harvest away
+    } else if(T<720){                 // departing toward the left end, carrying the harvest away
       train.visible=true; const u=smoothstep(0,1,(T-470)/250);
       train.position.x = dwellX + (EXIT-dwellX)*u; trainFruit.visible=true;
     } else { train.visible=false; trainFruit.visible=false; }   // off-stage, then loop
-    if(Math.abs(train.position.x) > HALF+0.2) train.visible=false;  // safety: never show off the rails
+    if(Math.abs(train.position.x) > HALF+0.2) train.visible=false;  // safety: never show off the guideway
   } else { train.visible=false; trainFruit.visible=false; }
   // information flowing in and out along the hub arcs
   const infoOn = progress>0.55;
