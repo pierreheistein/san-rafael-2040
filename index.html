@@ -265,19 +265,28 @@ renderer.toneMappingExposure = 1.0;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(COL.void);
-scene.fog = new THREE.FogExp2(COL.fog, 0.010);   // light, airy depth — the block floats
+// soft daytime sky: a vertical gradient (pale blue up high → near-white at the horizon)
+const skyCanvas=document.createElement('canvas'); skyCanvas.width=16; skyCanvas.height=256;
+const sctx=skyCanvas.getContext('2d');
+const skg=sctx.createLinearGradient(0,0,0,256);
+skg.addColorStop(0.00,'#A9D1E8');   // upper sky
+skg.addColorStop(0.55,'#D4E6F0');
+skg.addColorStop(1.00,'#EFF1EC');   // pale horizon
+sctx.fillStyle=skg; sctx.fillRect(0,0,16,256);
+const skyTex=new THREE.CanvasTexture(skyCanvas); skyTex.colorSpace=THREE.SRGBColorSpace;
+scene.background = skyTex;
+scene.fog = new THREE.FogExp2(0xDCEAF1, 0.0085);   // haze tinted to the sky so the island sits in open air
 
 const camera = new THREE.PerspectiveCamera(isMobile?54:40, innerWidth/innerHeight, 0.1, 200);
-camera.position.set(15.5, 9.5, 18.4);
+camera.position.set(17, 7.5, 21);
 
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(0, 1.3, 0);
+controls.target.set(0, -1.5, 0);   // look at the island's middle so the floating underside reads
 controls.enableDamping = true;
 controls.dampingFactor = 0.06;
 controls.enablePan = false;
 controls.minDistance = 9;
-controls.maxDistance = 30;
+controls.maxDistance = 46;
 controls.minPolarAngle = 0.18;
 controls.maxPolarAngle = Math.PI*0.46;
 controls.autoRotate = !reduceMotion && !STILL;
@@ -353,17 +362,39 @@ function terrainHeight(x,z){
   return CHANNEL*(1-w) + natural*w;                 // water sits in a flat trench; banks rise right at its edge
 }
 
-// ---------- the diorama base (earthy cross-section strata) ----------
+// ---------- the floating island: soil-strata rim + a rocky teardrop tapering to a point, with hanging roots ----------
+// thin square soil bands just under the surface so the top edge still reads as a cross-section
 function strata(y,height,color,inset){
   const wsz=HALF*2-(inset||0);
   const m=new THREE.Mesh(new THREE.BoxGeometry(wsz, height, wsz),
     new THREE.MeshStandardMaterial({color, roughness:1}));
   m.position.y=y; m.receiveShadow=true; model.add(m); return m;
 }
-// exact-tiling bands (no overlap → no z-fight), slightly stepped inward for a clean cross-section
-strata(-0.55, 1.10, 0xD9C49A, 0.0);    // [-1.10, 0]  sandy topsoil
-strata(-1.75, 1.30, 0xC2A878, 0.5);    // [-2.40, -1.10] pale soil
-strata(-3.30, 1.80, 0xA98F68, 1.1);    // [-4.20, -2.40] light bedrock
+strata(-0.45, 0.90, 0xD9C49A, 0.0);    // sandy topsoil (full footprint, matches the terrain)
+strata(-1.25, 0.80, 0xC2A878, 1.0);    // pale soil, stepped inward toward the rock
+
+// the rocky underside — a round teardrop bulging just under the rim, tapering to a point below
+const rockMat=new THREE.MeshStandardMaterial({color:0x8C7B62, roughness:1, flatShading:true});
+const rockLowMat=new THREE.MeshStandardMaterial({color:0x6E5F49, roughness:1, flatShading:true});
+const rockProfile=[[10.6,-0.8],[10.9,-1.7],[10.1,-2.9],[8.5,-4.1],[6.4,-5.3],[4.3,-6.5],[2.4,-7.7],[1.0,-8.9],[0.05,-9.9]]
+  .map(p=>new THREE.Vector2(p[0],p[1]));
+const teardrop=new THREE.Mesh(new THREE.LatheGeometry(rockProfile,13), rockMat);
+teardrop.receiveShadow=true; model.add(teardrop);
+// a darker core glimpsed at the very bottom + a few rough outcrops to break the silhouette
+const tip=new THREE.Mesh(new THREE.LatheGeometry(rockProfile.slice(4),11), rockLowMat); model.add(tip);
+for(let i=0;i<5;i++){ const a=rr(0,Math.PI*2), yy=rr(-3.0,-6.5), rad=(yy>-4.5?9.2:6.6);
+  const chunk=new THREE.Mesh(new THREE.IcosahedronGeometry(rr(0.7,1.4),0), rnd()<0.5?rockMat:rockLowMat);
+  chunk.position.set(Math.cos(a)*rad, yy, Math.sin(a)*rad);
+  chunk.rotation.set(rr(0,3),rr(0,3),rr(0,3)); chunk.scale.y=rr(0.6,1.0); model.add(chunk);
+}
+// hanging roots dangling from the underside
+const rootMat=new THREE.MeshStandardMaterial({color:0x5A4530, roughness:1});
+for(let i=0;i<8;i++){ const a=rr(0,Math.PI*2), rad=rr(2.5,7.5), len=rr(1.4,3.6);
+  const top=Math.max(-7.2, -1.5 - rad*0.55);   // root starts deeper the further out it hangs
+  const root=new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.13,len,5), rootMat);
+  root.position.set(Math.cos(a)*rad, top-len/2, Math.sin(a)*rad);
+  root.rotation.set(rr(-0.25,0.25),0,rr(-0.25,0.25)); model.add(root);
+}
 
 // ---------- terrain surface (square plane, dunes + mountains, vertex-coloured) ----------
 const terrainGeo = new THREE.PlaneGeometry(HALF*2, HALF*2, 132, 132);
@@ -414,6 +445,42 @@ function makeRiver(path, width, surfaceY){
   const mesh=new THREE.Mesh(g,m); model.add(mesh);
 }
 makeRiver(RIVER_PATHS[0], 1.7, 0.30);   // single river through the valley (vertical branch removed)
+
+// ---------- waterfall: the river spills off the +x edge of the island and falls into open sky ----------
+(function(){
+  const WF_X=11.0, WF_Z=4.4, WF_W=1.9, WF_H=7.4, top=0.32;
+  // a downward-bowed sheet (waterfalls arc outward as they fall)
+  const geo=new THREE.PlaneGeometry(WF_W, WF_H, 1, 8);
+  const pos=geo.attributes.position;
+  for(let i=0;i<pos.count;i++){ const f=(WF_H/2 - pos.getY(i))/WF_H; pos.setZ(i, pos.getZ(i) + f*f*1.0); } // local +z → world +x (outward)
+  pos.needsUpdate=true; geo.computeVertexNormals();
+  // body: cyan sheet fading out toward the bottom (static)
+  const bc=document.createElement('canvas'); bc.width=8; bc.height=256;
+  const bx=bc.getContext('2d'); const bg=bx.createLinearGradient(0,0,0,256);
+  bg.addColorStop(0.0,'rgba(110,196,214,0.95)'); bg.addColorStop(0.55,'rgba(90,182,202,0.72)');
+  bg.addColorStop(0.85,'rgba(150,212,224,0.28)'); bg.addColorStop(1.0,'rgba(190,224,230,0)');
+  bx.fillStyle=bg; bx.fillRect(0,0,8,256);
+  const body=new THREE.Mesh(geo, new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(bc), transparent:true, depthWrite:false, side:THREE.DoubleSide}));
+  body.rotation.y=Math.PI/2; body.position.set(WF_X, top-WF_H/2, WF_Z); scene.add(body);
+  // strands: white vertical streaks, tiled and scrolled downward in the render loop (the falling motion)
+  const sc=document.createElement('canvas'); sc.width=64; sc.height=128;
+  const sx=sc.getContext('2d'); sx.clearRect(0,0,64,128); sx.strokeStyle='rgba(244,252,254,0.85)'; sx.lineWidth=2;
+  for(let i=0;i<6;i++){ const lx=6+i*10+rr(-2,2); sx.globalAlpha=rr(0.4,0.9); sx.beginPath(); sx.moveTo(lx,0); sx.lineTo(lx+rr(-2,2),128); sx.stroke(); }
+  const strandTex=new THREE.CanvasTexture(sc); strandTex.wrapS=strandTex.wrapT=THREE.RepeatWrapping; strandTex.repeat.set(1,2.4);
+  const strands=new THREE.Mesh(geo, new THREE.MeshBasicMaterial({map:strandTex, transparent:true, depthWrite:false, side:THREE.DoubleSide}));
+  strands.rotation.y=Math.PI/2; strands.position.set(WF_X+0.05, top-WF_H/2, WF_Z); scene.add(strands);
+  window.__waterfallTex=strandTex;   // scrolled each frame
+  // mist where the water dissolves into the sky
+  const mc=document.createElement('canvas'); mc.width=mc.height=128;
+  const mx=mc.getContext('2d'); const mg=mx.createRadialGradient(64,64,4,64,64,64);
+  mg.addColorStop(0,'rgba(242,250,252,0.7)'); mg.addColorStop(1,'rgba(242,250,252,0)');
+  mx.fillStyle=mg; mx.fillRect(0,0,128,128);
+  const mtex=new THREE.CanvasTexture(mc);
+  for(const m of [[0.2,0.2],[0.9,-0.6],[-0.2,-1.0]]){
+    const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:mtex, transparent:true, depthWrite:false, opacity:0.5}));
+    sp.position.set(WF_X+0.7+m[0], top-WF_H+0.6+m[1], WF_Z); sp.scale.set(2.4,1.7,1); scene.add(sp);
+  }
+})();
 
 // ---------- trees: foothill conifers + valley algarrobos (grow in with progress) ----------
 const trees=[];
@@ -702,15 +769,7 @@ const clouds=[];
   }
 })();
 
-// ---------- soft contact shadow so the diorama floats on the light ground ----------
-const shCanvas=document.createElement('canvas'); shCanvas.width=shCanvas.height=256;
-const shx=shCanvas.getContext('2d');
-const shg=shx.createRadialGradient(128,128,12,128,128,128);
-shg.addColorStop(0,'rgba(58,44,28,0.42)'); shg.addColorStop(0.55,'rgba(58,44,28,0.20)'); shg.addColorStop(1,'rgba(58,44,28,0)');
-shx.fillStyle=shg; shx.fillRect(0,0,256,256);
-const contact=new THREE.Mesh(new THREE.PlaneGeometry(42,42),
-  new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(shCanvas), transparent:true, depthWrite:false}));
-contact.rotation.x=-Math.PI/2; contact.position.y=-4.35; scene.add(contact);
+// (ground contact shadow removed — the island now floats in open sky)
 
 // ---------- the four world-cities (lights that converge home) ----------
 const cityGroup = new THREE.Group(); scene.add(cityGroup);
@@ -817,12 +876,12 @@ function applyState(p){
   // The camera is "scripted" (driven by progress) for screenshots AND on mobile,
   // where there's no free-orbit — scrolling turns the model.
   if(FORCED!=null || isMobile){
-    let ang = 0.60 + p*0.30, dist = 24 - p*2.8, hy = 10.0 - p*1.8;   // desktop forced framing
-    if(isMobile){ ang = 0.55 + p*0.55; dist = 21 - p*3.0; hy = 11.5 - p*1.6; }  // portrait framing
-    if(CAM!=null){ ang = CAM*Math.PI*2; dist = 23; hy = 10.5; }       // QA sweep override
+    let ang = 0.60 + p*0.30, dist = 30 - p*2.5, hy = 8.5 - p*2.0;     // desktop forced framing
+    if(isMobile){ ang = 0.55 + p*0.55; dist = 42 - p*3.0; hy = 9.0 - p*1.6; }    // portrait: fit the whole miniature world
+    if(CAM!=null){ ang = CAM*Math.PI*2; dist = 31; hy = 6.5; }        // QA sweep override
     camera.position.set(Math.sin(ang)*dist, hy, Math.cos(ang)*dist);
-    controls.target.set(0, 1.2, 0);
-    camera.lookAt(0, 1.2, 0);          // re-aim: position alone doesn't orient the camera
+    controls.target.set(0, -1.5, 0);
+    camera.lookAt(0, -1.5, 0);          // re-aim: position alone doesn't orient the camera
     camera.updateProjectionMatrix();
   } else {
     controls.minDistance = 9;          // desktop: OrbitControls owns rotation
@@ -843,6 +902,7 @@ addEventListener('resize',()=>{
 let frame=0;
 function animate(){
   frame++;
+  if(window.__waterfallTex) window.__waterfallTex.offset.y = (window.__waterfallTex.offset.y - 0.03) % 1;  // water falls
   progress += (targetProgress-progress)*0.10;
   if(Math.abs(targetProgress-progress)<0.0005) progress=targetProgress;
   updateBeats(progress);
