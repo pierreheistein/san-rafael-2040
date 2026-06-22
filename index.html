@@ -489,7 +489,7 @@ for(let k=0;k<65;k++){
 }
 // modern-layer placements declared here so the valley trees can avoid them (single source of truth)
 const SOLAR_POS  = [[-5.0,5.6,0.48],[4.6,6.2,0.58],[-7.8,4.6,0.52],[7.2,5.0,0.62],[-2.4,7.3,0.55]];
-const CACTUS_POS = [[-3.6,8.2,0.34]];
+const CACTUS_POS = [[3.6,7.8,0.34]];   // +x side, near where the pod enters — farm loads it before it heads off into the distance
 // a site is blocked for trees if it sits in the river, on a solar array, or in the cactus farm
 function treeBlocked(x,z){
   if(riverDist(x,z) < 1.0) return true;                                                            // in the river channel (ribbon ±0.85)
@@ -792,14 +792,12 @@ const NF=faces.length, DSTEP=34;                 // degrees between faces (match
 let DRUM_R=parseFloat(getComputedStyle(drumWrap).getPropertyValue('--R'))||300;
 faces.forEach((f,i)=>f.style.setProperty('--i', i));
 function updateDrum(p){
-  // map scroll → face position: hold each face flat for most of its band, then roll to the next
-  const f=p*(NF-1), fi=Math.floor(f), frac=f-fi;
-  const roll = frac<0.58 ? 0 : smootherstep((frac-0.58)/0.42);
-  const deg = Math.min(NF-1, fi+roll) * DSTEP;
-  // translateZ(-R) re-centres the cylinder so the FRONT face sits at z=0 — no perspective magnification/clipping
+  // direct 1:1 map: the drum angle tracks the raw scroll position exactly — scrub up/down, no dwell, no auto-advance.
+  // translateZ(-R) re-centres the cylinder so the FRONT face sits at z=0 (no perspective magnification/clipping).
+  const deg = p*(NF-1)*DSTEP;
   if(!reduceMotion) drumEl.style.transform = `translateZ(${-DRUM_R}px) rotateX(${-deg}deg)`;
   for(let i=0;i<NF;i++){
-    const op = Math.max(0, 1 - Math.abs(i*DSTEP - deg)/24);   // only the front face (±24°) is readable
+    const op = Math.max(0, 1 - Math.abs(i*DSTEP - deg)/24);   // front face is sharp; neighbours fade as the drum turns
     faces[i].style.opacity = op.toFixed(3);
     faces[i].style.visibility = op>0.001 ? 'visible' : 'hidden';
   }
@@ -814,6 +812,7 @@ function applyState(p){
     let g = smoothstep(t.startP, t.startP+0.22, p);
     if(t.existing) g = Math.max(g, smoothstep(0.0,0.10,p));
     t.g.scale.setScalar(Math.max(0.0001, g*t.s));
+    t.g.visible = g>0.012;
   }
   // grass spreads along the water
   for(const gp of patches){
@@ -826,11 +825,13 @@ function applyState(p){
   for(const b of buildings){
     const g = b.existing? smoothstep(0.0,0.12,p) : bGrow;
     b.grp.scale.y = Math.max(0.0001, g*b.h);
+    b.grp.visible = g>0.02;          // hidden while squashed flat — coplanar faces z-fight at ~0 height
   }
   // modern-progress items scale in (solar, wind, fields, connectivity)
   for(const it of progressItems){
     const g=smoothstep(it.appear, it.appear+0.2, p);
     it.grp.scale.setScalar(Math.max(0.0001, g*it.s));
+    it.grp.visible = g>0.02;
   }
   // the river comes alive
   const riverGlow=smoothstep(0.10,0.5,p);
@@ -882,7 +883,7 @@ function animate(){
   if(window.__waterfallTex) window.__waterfallTex.offset.y = (window.__waterfallTex.offset.y - 0.03) % 1;  // water falls
   progress += (targetProgress-progress)*0.10;
   if(Math.abs(targetProgress-progress)<0.0005) progress=targetProgress;
-  updateDrum(progress);
+  updateDrum(targetProgress);   // drive the drum off the raw scroll position so it tracks the finger/wheel exactly
   applyState(progress);
   homePulse.scale.setScalar(0.8+Math.sin(frame*0.12)*0.25);
   for(const h of turbines) h.rotation.z = frame*0.045;
